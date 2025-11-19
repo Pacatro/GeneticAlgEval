@@ -1,0 +1,7 @@
+[project]
+name = "GeneticAlgEval"
+version = "0.1.0"
+description = "Evaluations of a Genetic Algorithm on Onemax problem"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["matplotlib>=3.10.7", "pandas>=2.3.3"]
