@@ -31,7 +31,6 @@ PROBLEM_SIZES = [
     50,
     100,
     500,
-    1000,
 ]
 EVAL_PARAMS: list[ParamsType] = [
     {

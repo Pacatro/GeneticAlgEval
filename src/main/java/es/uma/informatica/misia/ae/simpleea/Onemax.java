@@ -3,27 +3,27 @@ package es.uma.informatica.misia.ae.simpleea;
 import java.util.Random;
 
 public class Onemax implements Problem {
-  private int n;
+    private final int n;
 
-  public Onemax(int n) {
-    this.n = n;
-  }
-
-  public double evaluate(Individual individual) {
-    BinaryString binaryString = (BinaryString) individual;
-    double result = 0.0;
-    for (int i = 0; i < binaryString.getChromosome().length; i++) {
-      result += binaryString.getChromosome()[i];
+    public Onemax(int n) {
+        this.n = n;
     }
-    return result;
-  }
 
-  public BinaryString generateRandomIndividual(Random rnd) {
-    return new BinaryString(n, rnd);
-  }
+    public double evaluate(Individual individual) {
+        BinaryString binaryString = (BinaryString) individual;
+        double result = 0.0;
+        for (int i = 0; i < binaryString.getChromosome().length; i++) {
+            result += binaryString.getChromosome()[i];
+        }
+        return result;
+    }
 
-  @Override
-  public int getProblemSize() {
-    return this.n;
-  }
+    public BinaryString generateRandomIndividual(Random rnd) {
+        return new BinaryString(n, rnd);
+    }
+
+    @Override
+    public int getProblemSize() {
+        return this.n;
+    }
 }
