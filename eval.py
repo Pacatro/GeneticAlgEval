@@ -177,7 +177,6 @@ def plot_single_parameter(
     plt.title(f"{title}", fontsize=14)
     plt.legend(title=y_label, loc="best")
     plt.grid(True, alpha=0.3, linestyle="--")
-    plt.xscale("log")
     plt.tight_layout()
 
     if img_path:
