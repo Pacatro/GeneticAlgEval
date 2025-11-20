@@ -17,9 +17,12 @@ JAVA_MAIN = [
 EXECUTIONS = 30
 POPULATION_SIZE = 100
 FUNCTION_EVALUATIONS = 1000  # If 0 -> stop at optimal solution
-P_MUT = [0.01, 0.005, 0.001, 0.0005, 0.0001]
-P_CROSS = [0.6, 0.7, 0.8, 0.9, 0.95]
-PROBLEM_SIZES = [50, 100]
+P_MUT = [round(x * 0.01, 2) for x in range(1, 11)]
+P_CROSS = [round(x * 0.1, 1) for x in range(1, 11)]
+PROBLEM_SIZES = [
+    50,
+    100,
+]
 EVAL_PARAMS: list[ParamsType] = [
     {
         "population size": POPULATION_SIZE,
@@ -140,6 +143,48 @@ def plot_stats(
         plt.savefig(img_path, dpi=200, bbox_inches="tight")
 
 
+def plot_single_parameter(
+    stats: pd.DataFrame,
+    param_x_name: str,
+    param_hue_name: str,
+    title: str,
+    xlabel: str,
+    y_label: str,
+    marker: str,
+    img_path: str | None = None,
+) -> None:
+    """
+    Función auxiliar para generar una única gráfica de fitness (mean)
+    en función de un parámetro (param_x_name), agrupada por otro (param_hue_name).
+    """
+    stats_reset = stats.reset_index()
+
+    plt.figure(figsize=(10, 6))
+
+    for hue_value in stats_reset[param_hue_name].unique():
+        data = stats_reset[stats_reset[param_hue_name] == hue_value]
+        plt.plot(
+            data[param_x_name],
+            data["mean"],
+            marker=marker,
+            label=f"{y_label[:4]}={hue_value}",
+            linewidth=2,
+            markersize=8,
+        )
+
+    plt.xlabel(xlabel, fontsize=12)
+    plt.ylabel(y_label, fontsize=12)
+    plt.title(f"{title}", fontsize=14)
+    plt.legend(title=y_label, loc="best")
+    plt.grid(True, alpha=0.3, linestyle="--")
+    plt.xscale("log")
+    plt.tight_layout()
+
+    if img_path:
+        print(f"Saving plot to {img_path}")
+        plt.savefig(img_path, dpi=200, bbox_inches="tight")
+
+
 def get_args() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -183,6 +228,30 @@ def main():
             stats,
             title=f"Statistics (Size={problem_size})",
             img_path=f"{stats_filename}.png",
+        )
+
+        y_label = "Global Optimum" if args.global_optimum else "Fitness"
+        sigle_param_filename = size_eval_folder / y_label
+
+        plot_single_parameter(
+            stats,
+            param_x_name="bitflip probability",
+            param_hue_name="cross probability",
+            title=f"{y_label} evolution for different configurations (Size={problem_size})",
+            xlabel="Cross Probability",
+            y_label=y_label,
+            marker="o",
+            img_path=f"{sigle_param_filename}_by_cross.png",
+        )
+        plot_single_parameter(
+            stats,
+            param_x_name="cross probability",
+            param_hue_name="bitflip probability",
+            title=f"{y_label} evolution for different configurations (Size={problem_size})",
+            xlabel="Mutation Probability",
+            y_label=y_label,
+            marker="o",
+            img_path=f"{sigle_param_filename}_by_mutation.png",
         )
 
 
