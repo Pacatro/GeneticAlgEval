@@ -4,6 +4,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 
 type ParamsType = dict[str, int | float]
 
@@ -16,13 +17,10 @@ JAVA_MAIN = [
 
 EXECUTIONS = 30
 POPULATION_SIZE = 100
-FUNCTION_EVALUATIONS = 1000  # If 0 -> stop at optimal solution
+FUNCTION_EVALUATIONS = 5000  # If 0 -> stop at optimal solution
 P_MUT = [round(x * 0.01, 2) for x in range(1, 11)]
 P_CROSS = [round(x * 0.1, 1) for x in range(1, 11)]
-PROBLEM_SIZES = [
-    50,
-    100,
-]
+PROBLEM_SIZES = [50, 100]
 EVAL_PARAMS: list[ParamsType] = [
     {
         "population size": POPULATION_SIZE,
@@ -35,7 +33,9 @@ EVAL_PARAMS: list[ParamsType] = [
 ]
 
 
-def run_java(params: ParamsType, problem_size: int, function_evaluations: int) -> float:
+def run_java(
+    params: ParamsType, problem_size: int, function_evaluations: int
+) -> tuple[float, float]:
     cmd = JAVA_MAIN + [
         str(params["population size"]),
         str(function_evaluations),
@@ -49,8 +49,10 @@ def run_java(params: ParamsType, problem_size: int, function_evaluations: int) -
     if result.returncode != 0:
         raise Exception(f"Error running java command: {result.stderr}")
 
-    fitness = float(result.stdout.strip())
-    return fitness
+    java_out = result.stdout.strip().split(",")
+    result = float(java_out[0])
+    elapsed_time = float(java_out[1])
+    return result, elapsed_time
 
 
 def eval_results(problem_size: int, function_evaluations: int) -> pd.DataFrame:
@@ -58,129 +60,121 @@ def eval_results(problem_size: int, function_evaluations: int) -> pd.DataFrame:
 
     for params in EVAL_PARAMS:
         for execution in range(EXECUTIONS):
-            fitness = run_java(params, problem_size, function_evaluations)
-            result_row = params.copy()
-            result_row["fitness"] = fitness
-            result_row["execution"] = execution
+            result, elapsed_time = run_java(params, problem_size, function_evaluations)
+            result_row = {}
+            result_row["Execution"] = execution
+            result_row["Population Size"] = params["population size"]
+            result_row["Problem Size"] = problem_size
+            result_row["Evaluations"] = function_evaluations
+            result_row["Mutation Probability"] = params["bitflip probability"]
+            result_row["Crossover Probability"] = params["cross probability"]
+            result_row["Fitness" if function_evaluations != 0 else "Evaluations"] = (
+                result
+            )
+
+            if function_evaluations != 0:
+                result_row["Max Evaluations"] = function_evaluations
+
+            result_row["Elapsed Time (ms)"] = elapsed_time
             results.append(result_row)
 
     return pd.DataFrame(results)
 
 
-def plot_results(
-    df: pd.DataFrame,
-    title: str,
-    x_col: str = "execution",
-    y_col: str = "fitness",
-    img_path: str | None = None,
-) -> None:
-    assert x_col in df.columns, f"Columna {x_col} no encontrada"
-    assert y_col in df.columns, f"Columna {y_col} no encontrada"
+def generate_stats(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    mix_stats = df.groupby(["Mutation Probability", "Crossover Probability"])[
+        "Fitness"
+    ].agg(["mean", "std"])
+    cross_stats = df.groupby(["Crossover Probability"])["Fitness"].agg(["mean", "std"])
+    mut_stats = df.groupby(["Mutation Probability"])["Fitness"].agg(["mean", "std"])
 
-    plt.figure(figsize=(12, 6))
-    for (p_mut, p_cross), group in df.groupby(  # type: ignore
-        ["bitflip probability", "cross probability"]
-    ):
-        plt.plot(
-            group[x_col],
-            group[y_col],
-            label=f"Mut={p_mut}, Cross={p_cross}",
-        )
-    plt.title(title)
-    plt.xlabel(x_col)
-    plt.ylabel(y_col)
-    plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-
-    if img_path:
-        print("Saving plot to", img_path)
-        plt.savefig(img_path, dpi=200, bbox_inches="tight")
-
-
-def generate_stats(df: pd.DataFrame) -> pd.DataFrame:
-    stats = df.groupby(["bitflip probability", "cross probability"])["fitness"].agg(
-        ["mean", "std"]
-    )
-    assert isinstance(stats, pd.DataFrame)
-    return stats
-
-
-def plot_stats(
-    stats: pd.DataFrame,
-    title: str = "Comparación de Estadísticas por Configuración",
-    img_path: str | None = None,
-) -> None:
-    stats_reset = stats.reset_index()
-
-    plt.figure(figsize=(15, 8))
-
-    stats_reset["config"] = stats_reset.apply(
-        lambda row: f"Mut={row['bitflip probability']}\n"
-        f"Cross={row['cross probability']}\n",
-        axis=1,
-    )
-
-    x_pos = range(len(stats_reset))
-
-    plt.bar(
-        x_pos,
-        stats_reset["mean"],
-        yerr=stats_reset["std"],
-        capsize=5,
-        alpha=0.7,
-        color="steelblue",
-        edgecolor="black",
-    )
-    plt.xlabel("Configuración", fontsize=11)
-    plt.ylabel("Fitness Promedio", fontsize=11)
-    plt.xticks(x_pos, stats_reset["config"].tolist(), rotation=45)
-    plt.grid(axis="y", alpha=0.3, linestyle="--")
-
-    plt.title(title, fontsize=14, y=1.02)
-    plt.tight_layout()
-
-    if img_path:
-        print("Saving plot to", img_path)
-        plt.savefig(img_path, dpi=200, bbox_inches="tight")
+    assert isinstance(mix_stats, pd.DataFrame)
+    assert isinstance(cross_stats, pd.DataFrame)
+    assert isinstance(mut_stats, pd.DataFrame)
+    return mix_stats, cross_stats, mut_stats
 
 
 def plot_single_parameter(
     stats: pd.DataFrame,
-    param_x_name: str,
-    param_hue_name: str,
     title: str,
     xlabel: str,
-    y_label: str,
-    marker: str,
+    ylabel: str,
     img_path: str | None = None,
+    group_param: str | None = None,
+    param_x_name: str | None = None,
 ) -> None:
-    """
-    Función auxiliar para generar una única gráfica de fitness (mean)
-    en función de un parámetro (param_x_name), agrupada por otro (param_hue_name).
-    """
     stats_reset = stats.reset_index()
+    param_x_name = param_x_name if param_x_name else xlabel
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 6))
 
-    for hue_value in stats_reset[param_hue_name].unique():
-        data = stats_reset[stats_reset[param_hue_name] == hue_value]
+    if group_param:
+        for hue_value in stats_reset[group_param].unique():
+            data = stats_reset[stats_reset[group_param] == hue_value]
+            plt.plot(
+                data[param_x_name],
+                data["mean"],
+                marker="o",
+                linewidth=2,
+                markersize=8,
+                label=f"{hue_value}",
+            )
+    else:
         plt.plot(
-            data[param_x_name],
-            data["mean"],
-            marker=marker,
-            label=f"{y_label[:4]}={hue_value}",
+            stats_reset[param_x_name],
+            stats_reset["mean"],
+            marker="o",
             linewidth=2,
             markersize=8,
         )
 
     plt.xlabel(xlabel, fontsize=12)
-    plt.ylabel(y_label, fontsize=12)
+    plt.ylabel(ylabel, fontsize=12)
     plt.title(f"{title}", fontsize=14)
-    plt.legend(title=y_label, loc="best")
+
+    if group_param:
+        plt.legend(title=group_param, loc="best")
+
     plt.grid(True, alpha=0.3, linestyle="--")
     plt.tight_layout()
 
     if img_path:
         print(f"Saving plot to {img_path}")
+        plt.savefig(img_path, dpi=200, bbox_inches="tight")
+
+
+def plot_heatmap(
+    df: pd.DataFrame,
+    title: str,
+    ylabel: str = "Fitness",
+    img_path: str | None = None,
+) -> None:
+    pivot_data = (
+        df.groupby(["Mutation Probability", "Crossover Probability"])["Fitness"]
+        .mean()
+        .reset_index()
+    )
+
+    pivot_table = pivot_data.pivot(
+        index="Mutation Probability", columns="Crossover Probability", values="Fitness"
+    )
+
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(
+        pivot_table,
+        annot=True,
+        fmt=".2f",
+        cmap="YlOrRd" if ylabel == "Fitness" else "YlGnBu_r",
+        cbar_kws={"label": ylabel},
+        linewidths=0.5,
+    )
+    plt.title(title, fontsize=14)
+    plt.xlabel("Crossover Probability", fontsize=12)
+    plt.ylabel("Mutation Probability", fontsize=12)
+    plt.tight_layout()
+
+    if img_path:
+        print(f"Saving heatmap to {img_path}")
         plt.savefig(img_path, dpi=200, bbox_inches="tight")
 
 
@@ -207,50 +201,63 @@ def main():
     for problem_size in PROBLEM_SIZES:
         size_eval_folder = evals_folder / f"size={problem_size}"
         size_eval_folder.mkdir(exist_ok=True, parents=True)
-
         results_filename = size_eval_folder / "results"
-        stats_filename = size_eval_folder / "stats"
+        results_filename = size_eval_folder / "stats"
 
         print("Starting evaluations for problem size", problem_size)
+
         df = eval_results(problem_size, function_evaluations)
         df.to_csv(f"{results_filename}.csv")
-        plot_results(
-            df,
-            title=f"Fitness evolution for different configurations (Size={problem_size})",
-            img_path=f"{results_filename}.png",
-        )
 
         print("Generating statistics for problem size", problem_size)
-        stats = generate_stats(df)
-        stats.to_csv(f"{stats_filename}.csv")
-        plot_stats(
-            stats,
-            title=f"Statistics (Size={problem_size})",
-            img_path=f"{stats_filename}.png",
-        )
+        mix_stats, cross_stats, mut_stats = generate_stats(df)
 
-        y_label = "Global Optimum" if args.global_optimum else "Fitness"
+        mix_stats.to_csv(f"{results_filename}_mix.csv")
+        cross_stats.to_csv(f"{results_filename}_cross.csv")
+        mut_stats.to_csv(f"{results_filename}_mut.csv")
+
+        y_label = "Evaluations" if args.global_optimum else "Fitness"
         sigle_param_filename = size_eval_folder / y_label
 
         plot_single_parameter(
-            stats,
-            param_x_name="bitflip probability",
-            param_hue_name="cross probability",
-            title=f"{y_label} evolution for different configurations (Size={problem_size})",
-            xlabel="Cross Probability",
-            y_label=y_label,
-            marker="o",
+            cross_stats,
+            title=f"{y_label} evolution for different crossover probabilities (Size={problem_size})",
+            xlabel="Crossover Probability",
+            ylabel=y_label,
             img_path=f"{sigle_param_filename}_by_cross.png",
         )
+
         plot_single_parameter(
-            stats,
-            param_x_name="cross probability",
-            param_hue_name="bitflip probability",
-            title=f"{y_label} evolution for different configurations (Size={problem_size})",
+            mut_stats,
+            title=f"{y_label} evolution for different mutation probabilities (Size={problem_size})",
             xlabel="Mutation Probability",
-            y_label=y_label,
-            marker="o",
-            img_path=f"{sigle_param_filename}_by_mutation.png",
+            ylabel=y_label,
+            img_path=f"{sigle_param_filename}_by_mut.png",
+        )
+
+        plot_single_parameter(
+            mix_stats,
+            title=f"{y_label} evolution for different configurations by Mutation (Size={problem_size})",
+            xlabel="Mutation Probability",
+            ylabel=y_label,
+            img_path=f"{sigle_param_filename}_by_mix_mut.png",
+            group_param="Crossover Probability",
+        )
+
+        plot_single_parameter(
+            mix_stats,
+            title=f"{y_label} evolution for different configurations by Crossover (Size={problem_size})",
+            xlabel="Crossover Probability",
+            ylabel=y_label,
+            img_path=f"{sigle_param_filename}_by_mix_cross.png",
+            group_param="Mutation Probability",
+        )
+
+        plot_heatmap(
+            df,
+            title=f"Heatmap for different configurations (Size={problem_size})",
+            img_path=f"{sigle_param_filename}_heatmap.png",
+            ylabel=y_label,
         )
 
 

@@ -18,15 +18,19 @@ public class Main {
         Map<String, Double> parameters = readEAParameters(args);
         EvolutionaryAlgorithm evolutionaryAlgorithm = new EvolutionaryAlgorithm(parameters, problem);
 
+        long t0 = System.currentTimeMillis();
         Individual bestSolution = evolutionaryAlgorithm.run();
+        long t1 = System.currentTimeMillis();
+
+        long elapseTime = t1 - t0;
 
         Double maxFunctionEvaluations = parameters.get(EvolutionaryAlgorithm.MAX_FUNCTION_EVALUATIONS_PARAM);
 
         // If we are looking for the global optimum, we want to know the number of evaluations instead of the fitness value
-        Double result = maxFunctionEvaluations > 0 ? bestSolution.fitness : evolutionaryAlgorithm.getFuncEvaluations();
+        int result = maxFunctionEvaluations > 0 ? (int) bestSolution.fitness : evolutionaryAlgorithm.getFuncEvaluations();
 
         // We print only the result number, so the python script can collect it from stdout
-        System.out.println(result);
+        System.out.printf("%d,%d", result, elapseTime);
     }
 
     private static Map<String, Double> readEAParameters(String[] args) {
