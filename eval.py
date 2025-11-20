@@ -1,7 +1,9 @@
-from pathlib import Path
+import argparse
 import subprocess
-import pandas as pd
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import pandas as pd
 
 type ParamsType = dict[str, int | float]
 
@@ -14,24 +16,10 @@ JAVA_MAIN = [
 
 EXECUTIONS = 30
 POPULATION_SIZE = 100
-FUNCTION_EVALUATIONS = 3000  # If 0 -> stop at optimal solution
-
-# Configurations
-P_MUT = [
-    0.01,
-    0.1,
-    0.2,
-]
-P_CROSS = [
-    0.01,
-    0.1,
-    0.5,
-]
-PROBLEM_SIZES = [
-    50,
-    100,
-    500,
-]
+FUNCTION_EVALUATIONS = 1000  # If 0 -> stop at optimal solution
+P_MUT = [0.01, 0.005, 0.001, 0.0005, 0.0001]
+P_CROSS = [0.6, 0.7, 0.8, 0.9, 0.95]
+PROBLEM_SIZES = [50, 100]
 EVAL_PARAMS: list[ParamsType] = [
     {
         "population size": POPULATION_SIZE,
@@ -44,13 +32,12 @@ EVAL_PARAMS: list[ParamsType] = [
 ]
 
 
-def run_java(params: ParamsType, problem_size: int) -> float:
+def run_java(params: ParamsType, problem_size: int, function_evaluations: int) -> float:
     cmd = JAVA_MAIN + [
         str(params["population size"]),
-        str(params["function evaluations"]),
+        str(function_evaluations),
         str(params["bitflip probability"]),
         str(params["cross probability"]),
-        # str(params["problem size"]),
         str(problem_size),
     ]
 
@@ -63,12 +50,12 @@ def run_java(params: ParamsType, problem_size: int) -> float:
     return fitness
 
 
-def eval_results(problem_size: int) -> pd.DataFrame:
+def eval_results(problem_size: int, function_evaluations: int) -> pd.DataFrame:
     results = []
 
     for params in EVAL_PARAMS:
         for execution in range(EXECUTIONS):
-            fitness = run_java(params, problem_size)
+            fitness = run_java(params, problem_size, function_evaluations)
             result_row = params.copy()
             result_row["fitness"] = fitness
             result_row["execution"] = execution
@@ -119,13 +106,10 @@ def plot_stats(
     title: str = "Comparación de Estadísticas por Configuración",
     img_path: str | None = None,
 ) -> None:
-    # Reset index para facilitar el plotting
     stats_reset = stats.reset_index()
 
-    # Crear figura con un solo subplot
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(15, 8))
 
-    # Crear etiquetas descriptivas para el eje X
     stats_reset["config"] = stats_reset.apply(
         lambda row: f"Mut={row['bitflip probability']}\n"
         f"Cross={row['cross probability']}\n",
@@ -134,7 +118,6 @@ def plot_stats(
 
     x_pos = range(len(stats_reset))
 
-    # Subplot 1: Media con barras de error
     plt.bar(
         x_pos,
         stats_reset["mean"],
@@ -149,7 +132,7 @@ def plot_stats(
     plt.xticks(x_pos, stats_reset["config"].tolist(), rotation=45)
     plt.grid(axis="y", alpha=0.3, linestyle="--")
 
-    plt.title(title, fontsize=14, fontweight="bold", y=1.02)
+    plt.title(title, fontsize=14, y=1.02)
     plt.tight_layout()
 
     if img_path:
@@ -157,8 +140,24 @@ def plot_stats(
         plt.savefig(img_path, dpi=200, bbox_inches="tight")
 
 
+def get_args() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--global-optimum",
+        "-g",
+        action="store_true",
+        help="Stop algorithm when global optimum is found",
+    )
+    return parser
+
+
 def main():
-    evals_folder = Path("evals")
+    args = get_args().parse_args()
+
+    function_evaluations = FUNCTION_EVALUATIONS if not args.global_optimum else 0
+    evals_folder_name = "evals_global" if args.global_optimum else "evals_max_iter"
+
+    evals_folder = Path(evals_folder_name)
     evals_folder.mkdir(exist_ok=True, parents=True)
 
     for problem_size in PROBLEM_SIZES:
@@ -169,7 +168,7 @@ def main():
         stats_filename = size_eval_folder / "stats"
 
         print("Starting evaluations for problem size", problem_size)
-        df = eval_results(problem_size)
+        df = eval_results(problem_size, function_evaluations)
         df.to_csv(f"{results_filename}.csv")
         plot_results(
             df,
