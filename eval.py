@@ -120,24 +120,26 @@ def generate_stats(
 
 
 def plot_single_parameter(
-    stats: pd.DataFrame,
+    stats_path: str,
     xlabel: str,
     ylabel: str,
     img_path: str | None = None,
     group_param: str | None = None,
     param_x_name: str | None = None,
+    param_y_name: str | None = None,
 ) -> None:
-    stats_reset = stats.reset_index()
+    stats = pd.read_csv(stats_path)
     param_x_name = param_x_name if param_x_name else xlabel
+    param_y_name = param_y_name if param_y_name else ylabel
 
     plt.figure(figsize=(8, 6))
 
     if group_param:
-        for hue_value in stats_reset[group_param].unique():
-            data = stats_reset[stats_reset[group_param] == hue_value]
+        for hue_value in stats[group_param].unique():
+            data = stats[stats[group_param] == hue_value]
             plt.plot(
                 data[param_x_name],
-                data[f"{ylabel}_mean"],
+                data[f"{param_y_name}_mean"],
                 marker="o",
                 linewidth=2,
                 markersize=8,
@@ -145,8 +147,8 @@ def plot_single_parameter(
             )
     else:
         plt.plot(
-            stats_reset[param_x_name],
-            stats_reset[f"{ylabel}_mean"],
+            stats[param_x_name],
+            stats[f"{param_y_name}_mean"],
             marker="o",
             linewidth=2,
             markersize=8,
@@ -171,17 +173,22 @@ def plot_heatmap(
     ylabel: str,
     evals_folder_name: str,
     img_path: str | None = None,
+    param_y_name: str | None = None,
 ) -> None:
     df = pd.read_csv(f"./{evals_folder_name}/size={size}/results.csv")
 
+    param_y_name = param_y_name if param_y_name else ylabel
+
     pivot_data = (
-        df.groupby(["Mutation Probability", "Crossover Probability"])[ylabel]
+        df.groupby(["Mutation Probability", "Crossover Probability"])[param_y_name]
         .mean()
         .reset_index()
     )
 
     pivot_table = pivot_data.pivot(
-        index="Mutation Probability", columns="Crossover Probability", values=ylabel
+        index="Mutation Probability",
+        columns="Crossover Probability",
+        values=param_y_name,
     )
 
     plt.figure(figsize=(12, 8))
@@ -197,8 +204,8 @@ def plot_heatmap(
     cbar = ax.collections[0].colorbar  # obtener el objeto Colorbar
     assert cbar is not None
     cbar.set_label(ylabel, fontsize=20)
-    plt.xlabel("Crossover Probability", fontsize=20)
-    plt.ylabel("Mutation Probability", fontsize=20)
+    plt.xlabel("P_c", fontsize=20)
+    plt.ylabel("P_m", fontsize=20)
     plt.tight_layout()
 
     if img_path:
@@ -211,6 +218,12 @@ def get_args() -> argparse.ArgumentParser:
     parser.add_argument(
         "--global-optimum",
         "-g",
+        action="store_true",
+        help="Stop algorithm when global optimum is found",
+    )
+    parser.add_argument(
+        "--eval",
+        "-e",
         action="store_true",
         help="Stop algorithm when global optimum is found",
     )
@@ -232,57 +245,67 @@ def main():
         size_eval_folder.mkdir(exist_ok=True, parents=True)
         results_filename = size_eval_folder / "results"
         stats_filename = size_eval_folder / "stats"
-
-        # print("Starting evaluations for problem size", problem_size)
-        #
-        # df = eval_results(problem_size, function_evaluations)
-        # df.to_csv(f"{results_filename}.csv")
-
-        # print("Generating statistics for problem size", problem_size)
-        #
-        # mix_stats, cross_stats, mut_stats = generate_stats(df, result_column)
-        #
-        # mix_stats.to_csv(f"{stats_filename}_mix.csv")
-        # cross_stats.to_csv(f"{stats_filename}_cross.csv")
-        # mut_stats.to_csv(f"{stats_filename}_mut.csv")
-
         sigle_param_filename = size_eval_folder / result_column
 
-        # plot_single_parameter(
-        #     cross_stats,
-        #     xlabel="Crossover Probability",
-        #     ylabel=result_column,
-        #     img_path=f"{sigle_param_filename}_by_cross.png",
-        # )
-        #
-        # plot_single_parameter(
-        #     mut_stats,
-        #     xlabel="Mutation Probability",
-        #     ylabel=result_column,
-        #     img_path=f"{sigle_param_filename}_by_mut.png",
-        # )
-        #
-        # plot_single_parameter(
-        #     mix_stats,
-        #     xlabel="Mutation Probability",
-        #     ylabel=result_column,
-        #     img_path=f"{sigle_param_filename}_by_mix_mut.png",
-        #     group_param="Crossover Probability",
-        # )
-        #
-        # plot_single_parameter(
-        #     mix_stats,
-        #     xlabel="Crossover Probability",
-        #     ylabel=result_column,
-        #     img_path=f"{sigle_param_filename}_by_mix_cross.png",
-        #     group_param="Mutation Probability",
-        # )
+        if args.eval:
+            print("Starting evaluations for problem size", problem_size)
+
+            df = eval_results(problem_size, function_evaluations)
+            df.to_csv(f"{results_filename}.csv")
+
+            print("Generating statistics for problem size", problem_size)
+
+            mix_stats, cross_stats, mut_stats = generate_stats(df, result_column)
+
+            mix_stats.to_csv(f"{stats_filename}_mix.csv")
+            cross_stats.to_csv(f"{stats_filename}_cross.csv")
+            mut_stats.to_csv(f"{stats_filename}_mut.csv")
+            return
+
+        plot_single_parameter(
+            f"{stats_filename}_cross.csv",
+            xlabel="P_c",
+            ylabel="Fitness" if not args.global_optimum else "Evaluaciones",
+            img_path=f"{sigle_param_filename}_by_cross.png",
+            param_x_name="Crossover Probability",
+            param_y_name=result_column,
+        )
+
+        plot_single_parameter(
+            f"{stats_filename}_mut.csv",
+            xlabel="P_m",
+            ylabel="Fitness" if not args.global_optimum else "Evaluaciones",
+            img_path=f"{sigle_param_filename}_by_mut.png",
+            param_x_name="Mutation Probability",
+            param_y_name=result_column,
+        )
+
+        plot_single_parameter(
+            f"{stats_filename}_mix.csv",
+            xlabel="P_m",
+            ylabel="Fitness" if not args.global_optimum else "Evaluaciones",
+            img_path=f"{sigle_param_filename}_by_mix_mut.png",
+            group_param="Crossover Probability",
+            param_x_name="Mutation Probability",
+            param_y_name=result_column,
+        )
+
+        plot_single_parameter(
+            f"{stats_filename}_mix.csv",
+            xlabel="P_c",
+            ylabel="Fitness" if not args.global_optimum else "Evaluaciones",
+            img_path=f"{sigle_param_filename}_by_mix_cross.png",
+            group_param="Mutation Probability",
+            param_x_name="Crossover Probability",
+            param_y_name=result_column,
+        )
 
         plot_heatmap(
             size=problem_size,
-            ylabel=result_column,
+            ylabel="Fitness" if not args.global_optimum else "Evaluaciones",
             evals_folder_name=evals_folder_name,
             img_path=f"{sigle_param_filename}_heatmap.png",
+            param_y_name=result_column,
         )
 
 
